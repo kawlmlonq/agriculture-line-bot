@@ -1,0 +1,51 @@
+# Docker 相關檔案
+.dockerignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# 虛擬環境
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 測試
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 日誌
+*.log
+
+# 系統檔案
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# 文檔
+*.md
+!README.md
+
+# 本地設定（不包含在映像中）
+.env.local
+.env.*.local

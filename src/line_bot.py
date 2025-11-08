@@ -4,10 +4,12 @@ LINE Bot 處理器
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage,
+    MessageEvent, TextMessage, TextSendMessage, ImageMessage,
     QuickReply, QuickReplyButton, MessageAction
 )
 from config import Config
+from src.image_analyzer import ImageAnalyzer
+import requests
 
 
 class LineBotHandler:
@@ -15,13 +17,22 @@ class LineBotHandler:
     
     def __init__(self, qa_engine):
         self.qa_engine = qa_engine
+        self.image_analyzer = ImageAnalyzer()
         self.line_bot_api = LineBotApi(Config.LINE_CHANNEL_ACCESS_TOKEN)
         self.handler = WebhookHandler(Config.LINE_CHANNEL_SECRET)
         
-        # 註冊訊息處理器
+        # 儲存使用者最後上傳的圖片（簡單實現，實際應用可用資料庫）
+        self.user_images = {}
+        
+        # 註冊文字訊息處理器
         @self.handler.add(MessageEvent, message=TextMessage)
         def handle_text_message(event):
             self._handle_text_message(event)
+        
+        # 註冊圖片訊息處理器
+        @self.handler.add(MessageEvent, message=ImageMessage)
+        def handle_image_message(event):
+            self._handle_image_message(event)
     
     def _handle_text_message(self, event):
         """處理文字訊息"""
@@ -158,6 +169,48 @@ class LineBotHandler:
         except Exception as e:
             print(f"Webhook 處理錯誤: {e}")
             return False
+    
+    def _handle_image_message(self, event):
+        """處理圖片訊息"""
+        user_id = event.source.user_id
+        message_id = event.message.id
+        
+        print(f"收到使用者 {user_id} 的圖片訊息")
+        
+        try:
+            # 下載圖片
+            message_content = self.line_bot_api.get_message_content(message_id)
+            image_content = b''
+            for chunk in message_content.iter_content():
+                image_content += chunk
+            
+            # 儲存圖片內容（供後續文字問題使用）
+            self.user_images[user_id] = image_content
+            
+            # 分析圖片
+            self.line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="📸 正在分析圖片，請稍候...")
+            )
+            
+            # 使用圖像分析器分析
+            analysis_result = self.image_analyzer.analyze_agriculture_image(image_content)
+            
+            # 傳送分析結果
+            self.line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text=f"🌾 圖片分析結果：\n\n{analysis_result}\n\n💡 如果想詢問更多細節，可以直接輸入問題！")
+            )
+            
+            print(f"圖片分析完成並回覆使用者")
+            
+        except Exception as e:
+            error_msg = f"圖片處理失敗：{str(e)}"
+            print(error_msg)
+            self.line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text=f"抱歉，圖片分析時發生錯誤。請確保圖片清晰可見，然後再試一次。")
+            )
     
     def push_message(self, user_id, message):
         """
