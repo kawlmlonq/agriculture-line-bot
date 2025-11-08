@@ -4,9 +4,6 @@ flask==3.0.0
 
 # 向量資料庫
 chromadb==0.5.23
-langchain==0.1.4
-langchain-community==0.0.16
-langchain-openai==0.0.5
 
 # 文件處理
 pypdf==3.17.4
@@ -21,4 +18,3 @@ numpy==1.26.3
 # 工具
 python-dotenv==1.0.0
 requests==2.31.0
-tiktoken==0.5.2
