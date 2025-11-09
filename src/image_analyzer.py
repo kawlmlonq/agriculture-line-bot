@@ -5,6 +5,7 @@ import base64
 import io
 from groq import Groq
 from config import Config
+from prompts import Prompts
 from PIL import Image
 
 
@@ -14,6 +15,8 @@ class ImageAnalyzer:
     def __init__(self):
         self.client = Groq(api_key=Config.GROQ_API_KEY)
         self.vision_model = "meta-llama/llama-4-scout-17b-16e-instruct"
+        # 使用集中管理的提示詞
+        self.prompts = Prompts
     
     def encode_image(self, image_content: bytes) -> str:
         """
@@ -29,7 +32,7 @@ class ImageAnalyzer:
     
     def resize_image_if_needed(self, image_content: bytes, max_size: int = 1024) -> bytes:
         """
-        如果圖片太大就縮小
+        如果圖片太大就縮小，並確保格式正確
         
         Args:
             image_content: 原始圖片內容
@@ -40,24 +43,36 @@ class ImageAnalyzer:
         """
         try:
             image = Image.open(io.BytesIO(image_content))
+            print(f"原始圖片: {image.format}, 大小: {image.width}x{image.height}, 模式: {image.mode}")
+            
+            # 轉換為 RGB 模式（如果不是）
+            if image.mode not in ('RGB', 'RGBA'):
+                print(f"轉換圖片模式從 {image.mode} 到 RGB")
+                image = image.convert('RGB')
+            elif image.mode == 'RGBA':
+                # 將 RGBA 轉換為 RGB（移除透明度）
+                background = Image.new('RGB', image.size, (255, 255, 255))
+                background.paste(image, mask=image.split()[3])
+                image = background
             
             # 檢查是否需要縮小
             if image.width > max_size or image.height > max_size:
-                # 計算縮放比例
                 ratio = min(max_size / image.width, max_size / image.height)
                 new_size = (int(image.width * ratio), int(image.height * ratio))
-                
-                # 縮小圖片
+                print(f"縮小圖片從 {image.width}x{image.height} 到 {new_size[0]}x{new_size[1]}")
                 image = image.resize(new_size, Image.Resampling.LANCZOS)
-                
-                # 轉換回 bytes
-                output = io.BytesIO()
-                image.save(output, format=image.format or 'JPEG')
-                return output.getvalue()
             
-            return image_content
+            # 統一輸出為 JPEG 格式
+            output = io.BytesIO()
+            image.save(output, format='JPEG', quality=85)
+            result = output.getvalue()
+            print(f"處理後圖片大小: {len(result)} bytes")
+            return result
+            
         except Exception as e:
             print(f"圖片處理錯誤: {e}")
+            import traceback
+            traceback.print_exc()
             return image_content
     
     def analyze_agriculture_image(self, image_content: bytes, user_question: str = None) -> str:
@@ -72,36 +87,29 @@ class ImageAnalyzer:
             分析結果文字
         """
         try:
+            print(f"開始分析圖片，原始大小: {len(image_content)} bytes")
+            
+            # 檢查圖片大小
+            if len(image_content) == 0:
+                return "錯誤：收到的圖片內容為空。"
+            
+            if len(image_content) > 10 * 1024 * 1024:  # 10MB
+                print(f"警告：圖片過大 ({len(image_content)} bytes)，將會縮小")
+            
             # 縮小圖片（如果需要）
-            image_content = self.resize_image_if_needed(image_content)
+            image_content = self.resize_image_if_needed(image_content, max_size=800)
             
             # 編碼圖片
             base64_image = self.encode_image(image_content)
+            print(f"Base64 編碼長度: {len(base64_image)}")
             
-            # 建立提示詞
+            # 使用集中管理的提示詞
             if user_question:
-                prompt = f"""你是一位專業的農業專家。請仔細分析這張圖片並回答使用者的問題。
-
-使用者的問題：{user_question}
-
-請提供：
-1. 圖片內容的描述
-2. 針對問題的專業分析和建議
-3. 如果是病蟲害，請說明可能的原因和處理方法
-4. 如果是作物，請評估生長狀況
-
-請用繁體中文回答，內容要專業且實用。"""
+                prompt = self.prompts.IMAGE_ANALYSIS_WITH_QUESTION.format(question=user_question)
             else:
-                prompt = """你是一位專業的農業專家。請仔細分析這張農業相關的圖片。
-
-請提供以下資訊：
-1. **圖片內容**：描述看到什麼（植物、作物、病蟲害等）
-2. **狀態評估**：評估植物或作物的健康狀況
-3. **問題診斷**：如果有問題，指出可能的病蟲害或其他問題
-4. **建議措施**：提供具體的改善建議或處理方法
-5. **預防建議**：如何預防類似問題
-
-請用繁體中文回答，內容要專業且實用。"""
+                prompt = self.prompts.IMAGE_ANALYSIS_GENERAL
+            
+            print(f"呼叫 Groq Vision API，模型: {self.vision_model}")
             
             # 呼叫 Groq Vision API
             response = self.client.chat.completions.create(
@@ -127,12 +135,25 @@ class ImageAnalyzer:
                 max_tokens=1000
             )
             
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            print(f"API 回應成功，回答長度: {len(result)}")
+            return result
             
         except Exception as e:
             error_msg = f"圖片分析發生錯誤: {str(e)}"
             print(error_msg)
-            return f"抱歉，圖片分析時發生錯誤。請確保圖片清晰可見，然後再試一次。\n\n錯誤訊息：{str(e)}"
+            import traceback
+            traceback.print_exc()
+            
+            # 根據錯誤類型提供更具體的訊息
+            if "rate_limit" in str(e).lower():
+                return "抱歉，API 使用量已達上限。請稍後再試。"
+            elif "invalid" in str(e).lower() or "format" in str(e).lower():
+                return "抱歉，圖片格式可能不支援。請嘗試傳送 JPG 或 PNG 格式的圖片。"
+            elif "timeout" in str(e).lower():
+                return "抱歉，分析超時。請嘗試傳送較小的圖片。"
+            else:
+                return f"抱歉，圖片分析時發生錯誤。\n\n技術細節：{str(e)[:100]}"
     
     def quick_identify(self, image_content: bytes) -> str:
         """
@@ -148,7 +169,8 @@ class ImageAnalyzer:
             image_content = self.resize_image_if_needed(image_content)
             base64_image = self.encode_image(image_content)
             
-            prompt = "請用一句話簡短描述這張圖片的主要內容。如果是植物或作物，請說明種類。用繁體中文回答。"
+            # 使用集中管理的提示詞
+            prompt = self.prompts.IMAGE_QUICK_IDENTIFY
             
             response = self.client.chat.completions.create(
                 model=self.vision_model,

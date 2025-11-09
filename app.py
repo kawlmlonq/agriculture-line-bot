@@ -71,7 +71,24 @@ def health():
 
 @app.route("/test", methods=['POST'])
 def test_qa():
-    """測試問答功能（開發用）"""
+    """
+    測試問答功能（開發用）
+    
+    安全提示：
+    - 生產環境請在 .env 設定 ENABLE_TEST_ENDPOINT=False 停用此端點
+    - 或設定 TEST_API_KEY 並在請求中加入 X-API-Key header
+    """
+    # 檢查是否啟用測試端點
+    if not Config.ENABLE_TEST_ENDPOINT:
+        abort(404)  # 生產環境返回 404，讓攻擊者以為端點不存在
+    
+    # 如果有設定 TEST_API_KEY（不是預設值），則需要驗證
+    if Config.TEST_API_KEY != 'dev-test-key-change-in-production':
+        api_key = request.headers.get('X-API-Key')
+        if api_key != Config.TEST_API_KEY:
+            print(f"⚠️  未授權的測試端點存取嘗試：{request.remote_addr}")
+            abort(401, description='Unauthorized: Invalid API Key')
+    
     data = request.get_json()
     question = data.get('question', '')
     

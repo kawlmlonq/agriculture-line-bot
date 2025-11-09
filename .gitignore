@@ -23,8 +23,17 @@ wheels/
 .installed.cfg
 *.egg
 
-# 環境變數
+# 環境變數和敏感資訊
 .env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.key
+*.pem
+*.crt
+secrets/
+credentials/
 
 # 向量資料庫
 vector_db/

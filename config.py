@@ -28,6 +28,10 @@ class Config:
     PORT = int(os.getenv('PORT', 5000))
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
     
+    # 測試端點設定（建議生產環境不啟用）
+    ENABLE_TEST_ENDPOINT = os.getenv('ENABLE_TEST_ENDPOINT', 'False').lower() == 'true'
+    TEST_API_KEY = os.getenv('TEST_API_KEY', 'dev-test-key-change-in-production')
+    
     # 模型設定
     EMBEDDING_MODEL = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
     LLM_MODEL = 'llama-3.3-70b-versatile'  # Groq 的最新模型

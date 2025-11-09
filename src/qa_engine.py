@@ -4,6 +4,7 @@
 from typing import List, Dict, Any
 from groq import Groq
 from config import Config
+from prompts import Prompts
 
 
 class QAEngine:
@@ -13,6 +14,8 @@ class QAEngine:
         self.vector_store = vector_store
         self.client = Groq(api_key=Config.GROQ_API_KEY)
         self.model = Config.LLM_MODEL
+        # 使用集中管理的提示詞
+        self.prompts = Prompts
     
     def generate_answer(self, question: str, context_docs: List[Dict[str, Any]]) -> str:
         """
@@ -31,22 +34,18 @@ class QAEngine:
             for i, doc in enumerate(context_docs)
         ])
         
-        # 建立提示詞
-        prompt = f"""你是一位專業的農業顧問，請根據以下參考資料回答使用者的問題。
-
-參考資料：
-{context}
-
-使用者問題：{question}
-
-請根據上述參考資料提供專業、準確的回答。如果參考資料中沒有相關資訊，請誠實說明。回答要清楚、具體，並使用繁體中文。"""
+        # 使用集中管理的提示詞
+        prompt = self.prompts.QA_USER_PROMPT_TEMPLATE.format(
+            context=context,
+            question=question
+        )
 
         try:
             # 呼叫 Groq API
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "你是一位專業的農業顧問，擅長回答各種農業相關問題。"},
+                    {"role": "system", "content": self.prompts.QA_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=Config.MAX_TOKENS,

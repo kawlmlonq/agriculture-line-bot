@@ -8,6 +8,7 @@ from linebot.models import (
     QuickReply, QuickReplyButton, MessageAction
 )
 from config import Config
+from prompts import Prompts
 from src.image_analyzer import ImageAnalyzer
 import requests
 
@@ -20,6 +21,7 @@ class LineBotHandler:
         self.image_analyzer = ImageAnalyzer()
         self.line_bot_api = LineBotApi(Config.LINE_CHANNEL_ACCESS_TOKEN)
         self.handler = WebhookHandler(Config.LINE_CHANNEL_SECRET)
+        self.prompts = Prompts  # 使用集中管理的提示詞
         
         # 儲存使用者最後上傳的圖片（簡單實現，實際應用可用資料庫）
         self.user_images = {}
@@ -70,77 +72,21 @@ class LineBotHandler:
     def _handle_command(self, event, command):
         """處理特殊指令"""
         if command == '/help' or command == '/說明':
-            help_text = """🌾 農業知識庫 LINE Bot 使用說明
-
-【基本功能】
-直接輸入問題，我會從農業知識庫中搜尋相關資料並回答您。
-
-【範例問題】
-• 水稻的種植季節是什麼時候？
-• 如何防治番茄的病蟲害？
-• 有機肥料的使用方法
-• 葡萄的修剪技巧
-• 溫室栽培注意事項
-
-【指令列表】
-/help 或 /說明 - 顯示此說明
-/about 或 /關於 - 關於本系統
-/topics 或 /主題 - 顯示可查詢的主題
-
-有任何農業相關問題都可以直接問我！"""
-            
             self.line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=help_text)
+                TextSendMessage(text=self.prompts.HELP_MESSAGE)
             )
         
         elif command == '/about' or command == '/關於':
-            about_text = """🌾 農業知識庫 LINE Bot
-
-這是一個結合向量資料庫和 AI 的智能農業顧問系統。
-
-【技術特色】
-• 使用向量資料庫進行語義搜尋
-• 整合大型語言模型生成專業回答
-• 支援繁體中文對話
-• 即時回應您的農業問題
-
-【資料來源】
-系統會從專業農業知識庫中檢索相關資料，提供準確可靠的資訊。
-
-如有任何問題或建議，歡迎隨時提出！"""
-            
             self.line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=about_text)
+                TextSendMessage(text=self.prompts.ABOUT_MESSAGE)
             )
         
         elif command == '/topics' or command == '/主題':
-            topics_text = """📚 可查詢的農業主題
-
-【作物栽培】
-• 水稻種植
-• 番茄栽培
-• 蔬菜栽培
-• 果樹管理
-
-【農業技術】
-• 有機農業
-• 設施栽培
-• 病蟲害防治
-• 施肥管理
-
-【專業知識】
-• 植物營養
-• 土壤管理
-• 灌溉技術
-• 採收後處理
-
-直接輸入您想了解的主題或具體問題即可！"""
-            
             self.line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=topics_text)
+                TextSendMessage(text=self.prompts.TOPICS_MESSAGE)
             )
         
         else:
@@ -175,31 +121,56 @@ class LineBotHandler:
         user_id = event.source.user_id
         message_id = event.message.id
         
-        print(f"收到使用者 {user_id} 的圖片訊息")
+        print(f"收到使用者 {user_id} 的圖片訊息 (ID: {message_id})")
         
         try:
+            # 先回覆使用者正在處理
+            self.line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=self.prompts.IMAGE_PROCESSING)
+            )
+            
             # 下載圖片
+            print(f"開始下載圖片 {message_id}")
             message_content = self.line_bot_api.get_message_content(message_id)
+            
             image_content = b''
-            for chunk in message_content.iter_content():
+            chunk_count = 0
+            for chunk in message_content.iter_content(chunk_size=1024):
                 image_content += chunk
+                chunk_count += 1
+            
+            print(f"圖片下載完成：{len(image_content)} bytes，{chunk_count} chunks")
+            
+            # 檢查圖片大小
+            if len(image_content) == 0:
+                raise ValueError("下載的圖片內容為空")
+            
+            if len(image_content) > 20 * 1024 * 1024:  # 20MB
+                self.line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text="⚠️ 圖片太大了！請傳送小於 20MB 的圖片。")
+                )
+                return
             
             # 儲存圖片內容（供後續文字問題使用）
             self.user_images[user_id] = image_content
             
-            # 分析圖片
-            self.line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="📸 正在分析圖片，請稍候...")
-            )
-            
             # 使用圖像分析器分析
+            print(f"開始分析圖片...")
             analysis_result = self.image_analyzer.analyze_agriculture_image(image_content)
+            print(f"分析完成，結果長度: {len(analysis_result)}")
             
             # 傳送分析結果
+            response_message = f"{self.prompts.IMAGE_RESULT_PREFIX}{analysis_result}{self.prompts.IMAGE_RESULT_SUFFIX}"
+            
+            # 檢查訊息長度（LINE 限制 5000 字元）
+            if len(response_message) > 4500:
+                response_message = response_message[:4500] + "\n\n... (內容過長已截斷)"
+            
             self.line_bot_api.push_message(
                 user_id,
-                TextSendMessage(text=f"🌾 圖片分析結果：\n\n{analysis_result}\n\n💡 如果想詢問更多細節，可以直接輸入問題！")
+                TextSendMessage(text=response_message)
             )
             
             print(f"圖片分析完成並回覆使用者")
@@ -207,10 +178,28 @@ class LineBotHandler:
         except Exception as e:
             error_msg = f"圖片處理失敗：{str(e)}"
             print(error_msg)
-            self.line_bot_api.push_message(
-                user_id,
-                TextSendMessage(text=f"抱歉，圖片分析時發生錯誤。請確保圖片清晰可見，然後再試一次。")
-            )
+            import traceback
+            traceback.print_exc()
+            
+            # 提供更友善的錯誤訊息
+            user_message = "抱歉，圖片分析時發生錯誤。"
+            
+            if "download" in str(e).lower() or "content" in str(e).lower():
+                user_message += "\n\n可能原因：無法下載圖片。請重新傳送。"
+            elif "timeout" in str(e).lower():
+                user_message += "\n\n可能原因：處理超時。請嘗試傳送較小的圖片。"
+            elif "format" in str(e).lower():
+                user_message += "\n\n可能原因：圖片格式不支援。請傳送 JPG 或 PNG 格式。"
+            else:
+                user_message += f"\n\n錯誤訊息：{str(e)[:100]}"
+            
+            try:
+                self.line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text=user_message)
+                )
+            except:
+                print("無法傳送錯誤訊息給使用者")
     
     def push_message(self, user_id, message):
         """
