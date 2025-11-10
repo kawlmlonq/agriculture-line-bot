@@ -86,17 +86,36 @@ python app.py
 
 ## 部署方式
 
-### 本地部署（開發測試）
+### 📌 方式一：本機電腦執行（推薦 ⭐）
 
+**適合對象**：個人開發、測試、日常使用
+
+**優勢**：
+- ✅ 完全免費
+- ✅ 效能最佳
+- ✅ 即時更新
+- ✅ 方便開發除錯
+
+**快速啟動**：
 ```powershell
-# 啟動服務
-python app.py
+# 1. 啟動應用程式
+.\快速啟動.bat
 
-# 使用 ngrok 建立公開 URL
-ngrok http 5000
+# 2. 啟動 ngrok（提供外部連線）
+.\啟動ngrok.bat
+
+# 3. 複製 ngrok 網址並更新 LINE Webhook
 ```
 
-### NAS Docker 部署（推薦）
+📖 **完整指南**：請參考 [本機執行指南.md](本機執行指南.md)
+
+---
+
+### 📦 方式二：NAS Docker 部署
+
+**適合對象**：有 Synology NAS（2GB+ RAM）
+
+**注意**：DS220j (512MB RAM) 不建議使用，資源不足
 
 ```bash
 # 上傳專案到 NAS
@@ -107,7 +126,20 @@ bash deploy_nas.sh
 docker-compose up -d
 ```
 
-詳細步驟請參考 [Docker 部署指南](DOCKER_DEPLOYMENT.md)
+📖 **完整指南**：請參考 [Synology_NAS_部署指南.md](Synology_NAS_部署指南.md)
+
+---
+
+### ☁️ 方式三：雲端部署
+
+**適合對象**：需要 24/7 穩定運行
+
+**雲端平台**：
+- Render.com（免費 512MB RAM）
+- Railway.app
+- Fly.io
+
+📖 **完整指南**：請參考 [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## 使用方式
 
